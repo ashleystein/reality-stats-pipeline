@@ -1,0 +1,30 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+    
+        {
+            "name": "Dagster Dev",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "dagster",
+            "args": ["dev"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": true
+        },
+        {
+            "name": "Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false
+        }
+    ]
+}
