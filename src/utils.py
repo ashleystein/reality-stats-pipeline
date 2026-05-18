@@ -61,15 +61,7 @@ def get_next_page_imdb(curr, soup):
 
 
 def scrapePage(url):
-    # PROD
-    # secret_name = 'agent_for_wiki_scraping'
-    # agent = aws.get_secret(secret_name)
-    #try:
-        # response = requests.get(
-        #     url=url, headers={'user-agent': agent['UserAgent']}
-        # 
-    #DEV
-    agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+    agent = Path(__file__).parent.parent.joinpath("agent.txt").read_text().strip()
     try:
         response = requests.get(
             url=url, headers={'user-agent': agent}
