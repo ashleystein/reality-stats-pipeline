@@ -14,21 +14,21 @@ raw_folder       = REPO_ROOT / "data" / "csv_raw"
 processed_folder = REPO_ROOT / "data" / "processed"
 reality_cast_file = REPO_ROOT / "data" / "reality_cast.csv"
 
-show_partition = dg.StaticPartitionsDefinition(["bachelor", "bachelorette", "traitors"])
+show_partition = dg.StaticPartitionsDefinition(["bachelor", "bachelorette", "traitors", "bachelor in paradise"])
 REALITY_CAST_COLS = ["name", "age", "hometown", "state", "job", "eliminated", "show", "season"]
 
 
 def get_url_info(partition_key: str) -> dict:
-    df = pd.read_csv(data_folder / "scrape_url.csv", dtype=str)
+    df = pd.read_csv(data_folder / "wiki_urls.csv", dtype=str)
     show_slug = partition_key.lower()
-    mask = df["show"].str.lower().str.replace(r"^the\s+", "", regex=True) == show_slug
+    mask = (df["show"].str.lower().str.replace(r"^the\s+", "", regex=True) == show_slug) & (df["scraped"] != 'TRUE')
     matching = df[mask]
     if matching.empty:
         raise ValueError(f"No entry in scrape_url.csv for show partition: '{partition_key}'")
     row = matching.iloc[0] # This only processes the first row in scrape_url.csv
     show = utils.remove_leading_chars(row["show"], "the")
-    return {"show": show, "season": str(row["season"]), "url": str(row["url"])}
-
+    return [{"show": show, "season": str(row["season"]), "url": str(row["url"])}
+            for _, row in matching.iterrows()]
 
 def get_wiki_html(url_info: dict) -> dict:
     show = url_info["show"]
@@ -120,28 +120,37 @@ def normalize(df: pd.DataFrame, show_label: str, col_map: dict, extra_cols: dict
 
 BACHELORETTE_COL_MAP = col_map={"Name":"name", "Age":"age", "Hometown":"hometown", "Occupation":"job", "Outcome":"eliminated"}
 TRAITORS_COL_MAP = {"finish": "eliminated"}
+BIP_COL_MAP = {"Name":"name", "Age":"age", "Residence":"hometown","Outcome":"eliminated"}
 
 
 @dg.asset(partitions_def=show_partition)
 def reality_cast(context: dg.AssetExecutionContext) -> None:
     show = context.partition_key
-    url_info = get_url_info(show)
-    result = get_wiki_html(url_info)
-    raw_csv_df = html_to_raw_csv(result)
-    df = raw_to_processed_csv(raw_csv_df)
+    url_infos = get_url_info(show)
+    all_dfs = []
+    for url_info in url_infos:
+        result = get_wiki_html(url_info)
+        raw_csv_df = html_to_raw_csv(result)
+        df = raw_to_processed_csv(raw_csv_df)
 
-    match show:
-        case "bachelorette":
-            df = normalize(df, show_label="The Bachelorette", col_map=BACHELORETTE_COL_MAP)
-        case "bachelor":
-            if list(df.columns) == list(range(len(df.columns))):
-                df.columns = ["name", "age", "hometown", "job", "eliminated", "season", "show"]
-            df = normalize(df, show_label=show, col_map={})
-        case "traitors":
-            df = normalize(df, show_label=show, col_map=TRAITORS_COL_MAP, extra_cols={"job": None})
+        match show:
+            case "bachelorette":
+                df = normalize(df, show_label="The Bachelorette", col_map=BACHELORETTE_COL_MAP)
+            case "bachelor":
+                if list(df.columns) == list(range(len(df.columns))):
+                    df.columns = ["name", "age", "hometown", "job", "eliminated", "season", "show"]
+                df = normalize(df, show_label=show, col_map={})
+            case "traitors":
+                df = normalize(df, show_label=show, col_map=TRAITORS_COL_MAP, extra_cols={"job": None})
+            case "bachelor in paradise":
+                df = normalize(df, show_label="Bachelor in Paradise", col_map=BIP_COL_MAP, extra_cols={"job": None})
 
-    upsert_to_reality_cast(df)
-    context.add_output_metadata({"rows": len(df)})
+        all_dfs.append(df)
+    
+    combined = pd.concat(all_dfs, ignore_index=True)
+
+    upsert_to_reality_cast(combined)
+    context.add_output_metadata({"rows": len(combined)})
 
 
 
@@ -150,3 +159,10 @@ reality_cast_job = dg.define_asset_job(
     selection=[reality_cast],
     partitions_def=show_partition,
 )
+
+reality_cast_multiple_job = dg.define_asset_job(
+    name="reality_cast_multiple_job",
+    selection=[reality_cast],
+    partitions_def=show_partition,
+)
+
